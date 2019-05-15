@@ -24,15 +24,16 @@ contract Multisend {
   }
 
   /**
-  * Deposit token into this contract to use for sending
+  * @dev Deposit token into this contract to use for sending
   * @param tokenDepositAddress token contract addresses to deposit tokens from
   * @param tokenDepositAmount amount of tokens to deposit
   * @dev for ether transactions use address(0) as token contract address
   **/
   function deposit(address[] memory tokenDepositAddress, uint256[] memory tokenDepositAmount) public payable {
     require(tokenDepositAddress.length == tokenDepositAmount.length);
+    // if any ether was sent
     if(msg.value != 0) {
-      uint256 etherFee = msg.value.div(10000).mul(_fee);
+      uint256 etherFee = msg.value.div(10000).mul(_fee); //calculate fee
       balances[msg.sender][address(0)] = balances[msg.sender][address(0)].add(msg.value.sub(etherFee));
       balances[address(this)][address(0)] = balances[address(this)][address(0)].add(etherFee);
     }
@@ -69,7 +70,7 @@ contract Multisend {
   }
 
   /**
-  * Calls deposit and send methods in one transaction
+  * @dev calls deposit and send methods in one transaction
   **/
   function depositAndSendPayment(address[] calldata tokenDepositAddress, uint256[] calldata tokenDepositAmount, address[] calldata tokens, address payable[] calldata recipients, uint256[] calldata amounts) external payable returns (bool) {
       deposit(tokenDepositAddress, tokenDepositAmount);
@@ -77,7 +78,7 @@ contract Multisend {
   }
 
   /**
-  * Withdraw method to return tokens to original owner
+  * @dev Withdraw method to return tokens to original owner
   * @param tokenAddresses token contract address to withdraw from
   **/
   function withdrawTokens(address payable[] calldata tokenAddresses) external {
@@ -89,6 +90,7 @@ contract Multisend {
     }
   }
 
+  // @dev Withdraw method to return ether to original owner
   function withdrawEther() external {
     uint balance = balances[msg.sender][address(0)];
     balances[msg.sender][address(0)] = 0;
@@ -96,15 +98,30 @@ contract Multisend {
   }
 
   /*** CONSTANT METHODS **/
+
+  /**
+  * @param owner address to query balance of
+  * @param token contract address to query 
+  * @return a uint256 balance of the given users token amount
+  **/
   function getBalance(address owner, address token) external view returns (uint256) {
     return balances[owner][token];
   }
 
-  /*** OWNER METHODS **/
+  /**
+  * @dev returns the owner of the contract
+  * @return address of this contracts owner
+  **/
   function owner() external view returns (address) {
     return _owner;
   }
 
+  /*** OWNER METHODS **/
+
+  /**
+  * @dev function that returns the token fees collected by the contract to the owner
+  * @param tokenAddresses token contract addresses to withdraw from
+  **/
   function ownerWithdrawTokens(address payable[] calldata tokenAddresses) external onlyOwner {
     for(uint i=0; i<tokenAddresses.length;i++) {
       uint balance = balances[address(this)][tokenAddresses[i]];
@@ -114,12 +131,17 @@ contract Multisend {
     }
   }
 
+  // @dev function that returns the ether fees collected by the contract to the owner
   function ownerWithdrawEther() external onlyOwner {
     uint balance = balances[address(this)][address(0)];
     balances[address(this)][address(0)] = 0;
     _owner.transfer(balance);
   }
 
+  /**
+  * @dev method to transfer ownership to a new address
+  * @param newOwner address of the new owner
+  **/
   function transferOwnership(address payable newOwner) external onlyOwner {
     require(newOwner != address(0), "Owner address may not be set to zero address");
     _owner = newOwner;
