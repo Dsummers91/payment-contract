@@ -3,22 +3,32 @@ pragma solidity ^0.5.0;
 import "./IERC20.sol";
 import "./math/SafeMath.sol";
 
+/**
+* @title Multisend contract
+* @dev Provides ability to send multiple ERC20 tokens and ether within one transaction
+**/
 contract Multisend {
   using SafeMath for uint256;
 
-  address payable private _owner;
-  uint private _fee;
-  mapping(address => mapping(address => uint256)) public balances;
+  address payable private _owner; // owner of the contract
+  uint private _fee; // amount in basis points to take from each deposit
+  mapping(address => mapping(address => uint256)) public balances; // deposited token/ether balances
 
 
   /**
   * @param initialFee amount of fees taken per transaction in basis points
-  */
+  **/
   constructor(uint256 initialFee) public {
     _owner = msg.sender;
     _fee = initialFee;
   }
 
+  /**
+  * Deposit token into this contract to use for sending
+  * @param tokenDepositAddress token contract addresses to deposit tokens from
+  * @param tokenDepositAmount amount of tokens to deposit
+  * @dev for ether transactions use address(0) as token contract address
+  **/
   function deposit(address[] memory tokenDepositAddress, uint256[] memory tokenDepositAmount) public payable {
     require(tokenDepositAddress.length == tokenDepositAmount.length);
     if(msg.value != 0) {
@@ -34,48 +44,80 @@ contract Multisend {
     }
   }
 
+  /**
+  * Send payment from the funds initially depositted
+  * @param tokens token contract address to send payment
+  * @param recipients addresses to send tokens to
+  * @param amounts token amount being sent
+  * @dev for ether payments use address(0)
+  **/
   function sendPayment(address[] memory tokens, address payable[] memory recipients, uint256[] memory amounts) public payable returns (bool) {
     require(tokens.length == recipients.length);
     require(tokens.length == amounts.length);
     uint256 total_ether_amount = 0;
     for (uint i=0; i < recipients.length; i++) {
       if(tokens[i] != address(0)) {
-        IERC20(tokens[i]).transfer(recipients[i], amounts[i]);
         balances[msg.sender][tokens[i]] = balances[msg.sender][tokens[i]].sub(amounts[i]);
+        IERC20(tokens[i]).transfer(recipients[i], amounts[i]);
       }
       else {
-        recipients[i].transfer(amounts[i]);
         total_ether_amount = total_ether_amount.add(amounts[i]);
         balances[msg.sender][address(0)] = balances[msg.sender][address(0)].sub(amounts[i]);
+        recipients[i].transfer(amounts[i]);
       }
     }
   }
 
+  /**
+  * Calls deposit and send methods in one transaction
+  **/
   function depositAndSendPayment(address[] calldata tokenDepositAddress, uint256[] calldata tokenDepositAmount, address[] calldata tokens, address payable[] calldata recipients, uint256[] calldata amounts) external payable returns (bool) {
       deposit(tokenDepositAddress, tokenDepositAmount);
       sendPayment(tokens, recipients, amounts);
   }
 
+  /**
+  * Withdraw method to return tokens to original owner
+  * @param tokenAddresses token contract address to withdraw from
+  **/
   function withdrawTokens(address payable[] calldata tokenAddresses) external {
     for(uint i=0; i<tokenAddresses.length;i++) {
+      uint balance = balances[msg.sender][tokenAddresses[i]];
+      balances[msg.sender][tokenAddresses[i]] = 0;
       IERC20 ERC20 = IERC20(tokenAddresses[i]);
-      uint256 balance = ERC20.balanceOf(address(this));
+      ERC20.transfer(msg.sender, balance);
+    }
+  }
+
+  function withdrawEther() external {
+    uint balance = balances[msg.sender][address(0)];
+    balances[msg.sender][address(0)] = 0;
+    msg.sender.transfer(balance);
+  }
+
+  /*** CONSTANT METHODS **/
+  function getBalance(address owner, address token) external view returns (uint256) {
+    return balances[owner][token];
+  }
+
+  /*** OWNER METHODS **/
+  function owner() external view returns (address) {
+    return _owner;
+  }
+
+  function ownerWithdrawTokens(address payable[] calldata tokenAddresses) external onlyOwner {
+    for(uint i=0; i<tokenAddresses.length;i++) {
+      uint balance = balances[address(this)][tokenAddresses[i]];
+      balances[address(this)][tokenAddresses[i]] = 0;
+      IERC20 ERC20 = IERC20(tokenAddresses[i]);
       ERC20.transfer(_owner, balance);
     }
   }
 
-  /*** CONSTANT METHODS **/
-  function getBalance(address _owner, address _address) external view returns (uint256) {
-    return balances[_owner][_address];
-  }
-
-  /*** OWNER METHODS **/
-  function withdrawEther() external onlyOwner {
-    _owner.transfer(address(this).balance);
-  }
-
-  function owner() external view returns (address) {
-    return _owner;
+  function ownerWithdrawEther() external onlyOwner {
+    uint balance = balances[address(this)][address(0)];
+    balances[address(this)][address(0)] = 0;
+    _owner.transfer(balance);
   }
 
   function transferOwnership(address payable newOwner) external onlyOwner {
